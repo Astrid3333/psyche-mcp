@@ -1,0 +1,6 @@
+factor_analyzer==0.5.1
+girth==0.8.0
+mcp==1.28.1
+numpy==2.5.1
+pandas==3.0.3
+scipy==1.18.0
