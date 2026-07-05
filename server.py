@@ -1,3 +1,78 @@
+from __future__ import annotations
+
+from typing import Any, Optional
+
+import numpy as np
+from scipy.optimize import minimize_scalar
+from girth import twopl_mml, threepl_mml
+from factor_analyzer import FactorAnalyzer
+
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("psyche-mcp")
+
+_STATE: dict[str, Any] = {
+    "tests": {},
+}
+
+
+def _require_test(test_name: str) -> dict[str, Any]:
+    if test_name not in _STATE["tests"]:
+        raise RuntimeError(
+            f"No existe el test '{test_name}'. Usa 'create_test' primero. "
+            f"Tests disponibles: {list(_STATE['tests'].keys())}"
+        )
+    return _STATE["tests"][test_name]
+
+
+def _p3pl(theta: np.ndarray, a: float, b: float, c: float = 0.0) -> np.ndarray:
+    """Probabilidad de respuesta correcta bajo el modelo 3PL (2PL si c=0)."""
+    return c + (1.0 - c) / (1.0 + np.exp(-a * (theta - b)))
+
+
+def _item_information(item: dict[str, float], theta: float) -> float:
+    """Informacion de Fisher de un item en un nivel de theta (formula 3PL)."""
+    a, b, c = item["a"], item["b"], item["c"]
+    p = float(_p3pl(np.array([theta]), a, b, c)[0])
+    p = min(max(p, 1e-6), 1 - 1e-6)
+    if c == 0.0:
+        return (a ** 2) * p * (1 - p)
+    # Informacion 3PL (Lord, 1980): pondera por la asintota de guessing
+    q = 1 - p
+    return (a ** 2) * (q / p) * ((p - c) / (1 - c)) ** 2
+
+
+@mcp.tool()
+def create_test(test_name: str) -> dict[str, Any]:
+    """Crea un nuevo test (banco de items) vacio identificado por test_name."""
+    if test_name in _STATE["tests"]:
+        raise RuntimeError(f"El test '{test_name}' ya existe.")
+    _STATE["tests"][test_name] = {"items": {}}
+    return {"status": "ok", "test": test_name}
+
+
+@mcp.tool()
+def add_item(
+    test_name: str,
+    item_id: str,
+    a: float = 1.0,
+    b: float = 0.0,
+    c: float = 0.0,
+    construct: str = "",
+) -> dict[str, Any]:
+    """Agrega (o sobrescribe) un item al banco de un test, con parametros IRT
+    iniciales: a=discriminacion, b=dificultad, c=guessing (0 para 2PL)."""
+    test = _require_test(test_name)
+    test["items"][item_id] = {"a": a, "b": b, "c": c, "construct": construct}
+    return {"status": "ok", "test": test_name, "item": item_id}
+
+
+@mcp.tool()
+def list_items(test_name: str) -> dict[str, Any]:
+    """Lista los items de un test con sus parametros IRT actuales."""
+    test = _require_test(test_name)
+    return {"test": test_name, "items": test["items"]}
+
 
 
 @mcp.tool()
